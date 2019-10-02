@@ -10,7 +10,7 @@
 #include <dynamic_reconfigure/Config.h>
 
 #include <youbot_unload_object_table/UnloadAction.h>
-//#include <youbot_unload_object_table/ServerConfig.h>
+#include <youbot_unload_object_table/ServerConfig.h>
 
 #include <youbot_base_local_move/BaseAction.h>
 #include <youbot_arm_joints/JointAction.h>
@@ -36,16 +36,13 @@
 #define ANSI_COLOR_GREEN   "\x1b[32m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
-int stop =0;
-int numofmoveleft =0;
-
 bool objectSort(aricc_vision_msgs::Object i, aricc_vision_msgs::Object j){
   return ( fabs(i.position.y) < fabs(j.position.y) );
 }
 enum TaskEnum {
   kArmLookTable = 10,
-  kForwardAlignZero,
-  kBackwardAlignZero,
+  //kForwardAlignZero,
+  //kBackwardAlignZero,
   kArmMidPointBeforeUnload,
   kStopBase,
   kArmUnload,
@@ -65,8 +62,11 @@ enum TaskEnum {
   kFinishTask,
   kUpdateBestList,
   kArmStandby,
+  kMoveBaseForward,//ca
+  kMoveBaseBackward,//ca
   kEmpty
 };
+
 
 struct Table{
   double height;
@@ -94,8 +94,8 @@ public:
     switch(now){
       case kArmStandby:                return "kArmStandby";
       case kArmLookTable:              return "kArmLookTable";
-      case kForwardAlignZero:          return "kForwardAlignZero";
-      case kBackwardAlignZero:         return "kBackwardAlignZero";
+      //case kForwardAlignZero:          return "kForwardAlignZero";
+      //case kBackwardAlignZero:         return "kBackwardAlignZero";
       case kStopBase:                  return "kStopBase";
       case kArmUnload:                 return "kArmUnload";
       case kOpenGripperHalfClose:      return "kOpenGripperHalfClose";
@@ -114,7 +114,9 @@ public:
       case kBaseAlignObject:           return "kBaseAlignObject";
       case kUpdateBestList:            return "kUpdateBestList";
       case kFinishTask:                return "kFinishTask";
-
+       case kMoveBaseForward:             return "kMoveBaseForward";//ca
+        case kMoveBaseBackward:            return "kMoveBaseBackward";//ca
+      
       default:
       ROS_ERROR("BUG: Unhandled State: %u", now);
       return "BUG-UNKNOWN";
@@ -906,11 +908,27 @@ public:
                   case kArmLookTable:
                   state = moveArmJoints(armTrajectoryLookTable
                   if(state == SUCCEEDED){
-                      stop =0;
-                      numofmoveleft =0;
+                    sleep(2.5);
+                     task_.now = kMoveBaseForward;//ca
+                      timer_started=0; //ca
+                      counter=0;//ca
+                      //stop =0; 
+                      //numofmoveleft =0;
                       task_.now = kBaseMoveRight;
                   }
                   break;
+//ca//////////////////////////////////////////////////////////////////////////////                                        
+            case kMoveBaseForward:
+            basePose.x = 0.00;
+            basePose.y = 0;
+            basePose.theta = 0.0;
+            state = moveBase(basePose);
+            if(state == SUCCEEDED)
+              task_.now = kStaticFindObject;
+            else if(state == ABORTED)
+              task_.now = kMoveBaseBackward;
+            break;
+ //ca////////////////////////////////////////////////////////////////////
 //------------------------------------------------------------------------------
                   case kForwardAlignZero:
                   basePose.x = 0.0;
@@ -942,7 +960,8 @@ public:
                 if(state == SUCCEEDED) task_.now = kBaseAlignObject;
                 else if(state == ABORTED)
                 {
-                  task_.now = kCheckState;
+                  //task_.now = kCheckState;
+                  task_.now = kMoveBaseBackward;//ca
                 }
                 break;
 //------------------------------------------------------------------------------
@@ -1090,7 +1109,8 @@ public:
                     best_items_[0], best_slot_);
                     if(task_.items.size() == 0)
                     {
-                      task_.now = kBackwardAlignZero;
+                      //task_.now = kBackwardAlignZero;
+                      task_.now = kMoveBaseBackward;//ca
                     }
                     else
                     task_.now = kUpdateBestList;
@@ -1107,8 +1127,19 @@ public:
                   if(best_containers_.size() == 0 && best_items_.size() == 0)
                   task_.now = kBaseMoveLeft;
                   else
+                  task_.now = kMoveBaseBackward;//ca
                   task_.now = kBaseMoveLeft;//kCheckArmIkBeforeGrasp;                     // Might have bug here.
                   break;
+ //ca///////////////////////////////////////////////////////////////////////
+              case kMoveBaseBackward:
+              basePose.x = 0.0;
+              basePose.y = 0;
+              basePose.theta = 0.0;
+
+              state = moveBase(basePose);
+              if(state == SUCCEEDED) task_.now = kFinishTask;
+              break;
+//ca///////////////////////////////////////////////////////////////////////////////
 //------------------------------------------------------------------------------
                   case kBackwardAlignZero:
                   if(table_height_ == 0){
