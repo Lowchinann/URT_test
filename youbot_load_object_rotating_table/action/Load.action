@@ -1,0 +1,10 @@
+#goal
+float64 timeout     #in second
+float64 table_height #in meter
+string[] items      #item list need to detect
+string[] tray_state #tray state
+---
+#result
+string[] tray_state #tray state
+---
+#feedback

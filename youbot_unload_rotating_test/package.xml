@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<package>
+  <name>youbot_unload_object_table</name>
+  <version>0.0.0</version>
+  <description>The youbot unload object to table</description>
+  <maintainer email="aricc@todo.todo">aricc</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>geometry_msgs</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <build_depend>actionlib</build_depend>
+  <build_depend>actionlib_msgs</build_depend>
+  <build_depend>cmake_modules</build_depend>
+  <build_depend>message_generation</build_depend>
+  <build_depend>dynamic_reconfigure</build_depend>
+  <build_depend>aricc_utils</build_depend>
+  <build_depend>aricc_pid</build_depend>
+  <build_depend>aricc_vision_msgs</build_depend>
+
+  <run_depend>roscpp</run_depend>
+  <run_depend>geometry_msgs</run_depend>
+  <run_depend>std_msgs</run_depend>
+  <run_depend>actionlib_msgs</run_depend>
+  <run_depend>actionlib</run_depend>
+  <run_depend>message_runtime</run_depend>
+  <run_depend>dynamic_reconfigure</run_depend>
+  <run_depend>aricc_utils</run_depend>
+  <run_depend>aricc_pid</run_depend>
+  <run_depend>aricc_vision_msgs</run_depend>
+
+
+  <!-- The export tag contains other, unspecified, tags -->
+  <export>
+    <!-- You can specify that this package is a metapackage here: -->
+    <!-- <metapackage/> -->
+
+    <!-- Other tools can request additional information be placed here -->
+
+  </export>
+</package>

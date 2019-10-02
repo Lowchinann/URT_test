@@ -1,0 +1,332 @@
+#include <ros/ros.h>
+#include <dynamic_reconfigure/server.h>
+#include <actionlib/server/simple_action_server.h>
+#include <youbot_base_alignment/BaseAction.h>
+#include <youbot_base_alignment/ServerConfig.h>
+#include <geometry_msgs/Twist.h>
+#include <geometry_msgs/Pose2D.h>
+#include <nav_msgs/Odometry.h>
+#include <sensor_msgs/LaserScan.h>
+#include <tf/transform_broadcaster.h>
+#include <aricc_utils/geometry_utils.h>
+#include <aricc_pid/pid_controller.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string>
+#include <utility>
+#include <iostream>
+#include <assert.h>
+
+class BaseAction{
+
+public:
+  typedef youbot_base_alignment::ServerConfig Config;
+
+protected:
+  ros::NodeHandle nh_, pnh_;
+  actionlib::SimpleActionServer
+    <youbot_base_alignment::BaseAction> action_;
+  std::string action_name_;
+  boost::shared_ptr<dynamic_reconfigure::Server<Config> > srv_;
+  
+  geometry_msgs::Pose2D odom_now_;
+  geometry_msgs::Pose2D odom_start_;
+  int rate_;
+  boost::mutex mutex_;
+  bool laser_received_;
+  bool is_new_goal_;
+  double linear_tolerance_, angular_tolerance_;
+  std::string laser_topic_name_;
+
+  enum Task_ {kAdjustAngle, kAdjustDist};
+  Task_ task_state_;
+
+  double p_x_, i_x_, d_x_, i_min_x_,i_max_x_;
+  double p_y_, i_y_, d_y_, i_min_y_,i_max_y_;
+  double p_th_, i_th_, d_th_, i_min_th_,i_max_th_;
+  double vx_min_, vx_max_;
+  double vy_min_, vy_max_;
+  double vth_min_, vth_max_;
+  double l_dist_, r_dist_, f_dist_;
+  unsigned int l_index_, r_index_, f_index_;
+  double align_goal_;
+  
+  youbot_base_alignment::BaseFeedback feedback_;
+  youbot_base_alignment::BaseResult result_;
+ 
+  ros::Publisher pub_;
+  ros::Subscriber sub_;
+  ros::Time time_now_, time_start_, time_last_; 
+  aricc_control::PidController pid_x_, pid_y_, pid_th_;
+ 
+public:
+  BaseAction(std::string name) :
+    pnh_("~"), laser_received_(false),
+    action_(nh_, name, boost::bind(&BaseAction::executeCB, this, _1), false),
+    action_name_(name){
+    ROS_INFO("----------"); 
+    ROS_INFO("Starting %s ...", name.c_str());
+    pub_ = nh_.advertise<geometry_msgs::Twist >("cmd_vel", 1);
+
+    srv_ = boost::make_shared <dynamic_reconfigure::Server<Config> > (pnh_);
+    dynamic_reconfigure::Server<Config>::CallbackType f =
+      boost::bind (&BaseAction::configCallback, this, _1, _2);
+    srv_->setCallback(f);
+
+    pnh_.param<int>("rate", rate_, 20);
+    pnh_.param<std::string>("laser_topic_name", laser_topic_name_, "base_scan");
+    pnh_.param<double>("linear_tolerance", linear_tolerance_, 0.005);
+    pnh_.param<double>("angular_tolerance", angular_tolerance_, 0.005); //In meter
+    pnh_.param<double>("align_goal", align_goal_, 0.1); //In meter
+
+    pnh_.param<double>("p_x", p_x_, 20);
+    pnh_.param<double>("i_x", i_x_, 20);
+    pnh_.param<double>("d_x", d_x_, 20);
+    pnh_.param<double>("i_min_x", i_min_x_, 20);
+    pnh_.param<double>("i_max_x", i_max_x_, 20);
+
+    pnh_.param<double>("p_y", p_y_, 20);
+    pnh_.param<double>("i_y", i_y_, 20);
+    pnh_.param<double>("d_y", d_y_, 20);
+    pnh_.param<double>("i_min_y", i_min_y_, 20);
+    pnh_.param<double>("i_max_y", i_max_y_, 20);
+    
+    pnh_.param<double>("p_th", p_th_, 20);
+    pnh_.param<double>("i_th", i_th_, 20);
+    pnh_.param<double>("d_th", d_th_, 20);
+    pnh_.param<double>("i_min_th", i_min_th_, 20);
+    pnh_.param<double>("i_max_th", i_max_th_, 20);
+    
+    pnh_.param<double>("vx_max", vx_max_, 0.3);
+    pnh_.param<double>("vx_min", vx_min_, 0.05);
+    pnh_.param<double>("vy_max", vx_max_, 0.3);
+    pnh_.param<double>("vy_min", vy_max_, 0.05);
+    pnh_.param<double>("vth_max", vth_max_, 0.3);
+    pnh_.param<double>("vth_min", vth_min_, 0.05);
+    
+    pid_x_.initPid(p_x_, i_x_, d_x_, i_max_x_, i_min_x_);
+    pid_y_.initPid(p_y_, i_y_, d_y_, i_max_y_, i_min_y_);
+    pid_th_.initPid(p_th_, i_th_, d_th_, i_max_th_, i_min_th_);
+
+    action_.start();
+  }
+
+  ~BaseAction(void){
+    sub_.shutdown();
+  }
+
+  void subscribe(){
+    sub_ = nh_.subscribe( laser_topic_name_  ,1, &BaseAction::laserCB,this);
+  }
+
+  void unsubscribe(){
+    sub_.shutdown();
+  }
+
+  void configCallback(Config &config, uint32_t level){
+    boost::mutex::scoped_lock lock(mutex_);
+    p_x_ = config.p_x;
+    i_x_ = config.i_x;
+    d_x_ = config.d_x;
+    i_min_x_ = config.i_min_x;
+    i_max_x_ = config.i_max_x;
+    
+    p_y_ = config.p_y;
+    i_y_ = config.i_y;
+    d_y_ = config.d_y;
+    i_min_y_ = config.i_min_y;
+    i_max_y_ = config.i_max_y;
+  
+    p_th_ = config.p_th;
+    i_th_ = config.i_th;
+    d_th_ = config.d_th;
+    i_min_th_ = config.i_min_th;
+    i_max_th_ = config.i_max_th;
+
+    vx_min_ = config.vx_min;
+    vx_max_ = config.vx_max;
+    vy_min_ = config.vy_min;
+    vy_max_ = config.vy_max;
+    vth_min_ = config.vth_min;
+    vth_max_ = config.vth_max;
+    
+    pid_x_.setGains(p_x_, i_x_, d_x_, i_max_x_, i_min_x_);
+    pid_y_.setGains(p_y_, i_y_, d_y_, i_max_y_, i_min_y_);
+    pid_th_.setGains(p_th_, i_th_, d_th_, i_max_th_, i_min_th_);
+  }
+
+  void laserCB(const sensor_msgs::LaserScan::ConstPtr& msg){
+    boost::mutex::scoped_lock lock(mutex_);
+    if( getDist(*msg, l_index_, l_dist_) &&
+        getDist(*msg, r_index_, r_dist_) &&
+        getDist(*msg, f_index_, f_dist_) ) laser_received_ = true;
+  }
+
+  bool getDist(sensor_msgs::LaserScan reading, 
+    unsigned int index, double& dist, unsigned int beam = 3){
+
+    double r_min = static_cast<double>(reading.range_min);
+    double r_max = static_cast<double>(reading.range_max);
+    unsigned int i_max = static_cast<unsigned int>
+      (reading.angle_max/reading.angle_increment);
+ 
+    if( index < 0 || index > i_max ) {
+      ROS_WARN("Index is out of range");
+      return false;
+    }
+
+    double res = 0.0;
+    unsigned int cnt = 0;
+    for(unsigned int i = 0; i < beam; ++i){
+      double scan = reading.ranges[i+index];
+      if(scan > r_max || scan < r_min) continue;
+      res += scan; cnt++;
+    }
+    if( cnt != beam ) return false;
+    dist = static_cast<double>(res/cnt);
+  }
+
+  void stopBase(){
+    geometry_msgs::Twist vel;
+    vel.linear.x = 0;
+    vel.linear.y = 0;
+    vel.linear.z = 0;
+    vel.angular.x = 0;
+    vel.angular.y = 0;
+    vel.angular.z = 0;
+    pub_.publish(vel);
+  }
+
+  void moveBase(geometry_msgs::Twist vel){
+    pub_.publish(vel);
+  }
+
+  double getSingleVel(aricc_control::PidController pid,
+    double cur_pos, double dest_pos, double vel_max, double vel_min){
+    ros::Time time_now = ros::Time::now();
+    ros::Duration time_diff = time_now - time_last_;
+    double pos_diff = cur_pos - dest_pos;
+    double vel = pid.updatePid( pos_diff, time_diff.toBoost());
+    if( fabs(vel) > vel_max ) vel = aricc_utils::sign(vel)*vel_max;
+    if( fabs(vel) < vel_min ) vel = aricc_utils::sign(vel)*vel_min;
+    double pp, ii, dd, i_max, i_min;
+    pid.getGains(pp,ii,dd,i_max, i_min);
+    ROS_INFO("PID:%.3lf,%.3lf,%.3lf,%.3lf,%.3lf", pp, ii, dd, i_max, i_min);
+    ROS_INFO("Cur:%.3lf, Dst:%.3lf,Vel:%.3lf", cur_pos, dest_pos, vel);
+    time_last_ = time_now;
+    return vel;
+  }
+
+  bool isDone(double goal_dist){
+    boost::mutex::scoped_lock lock(mutex_);
+    if(!laser_received_){
+      ROS_WARN("%s: Cannot receive laser state ", action_name_.c_str());
+      return false;
+    }
+
+    laser_received_ = false; 
+
+    double d = l_dist_ - r_dist_;
+    double diff = f_dist_ - goal_dist;
+ 
+    double vx =  getSingleVel(pid_x_,  f_dist_,  goal_dist, vx_max_, vx_min_);
+    double vth = getSingleVel(pid_th_, d, 0.0, vth_max_, vth_min_);
+    geometry_msgs::Twist vel_msg;
+    vel_msg.linear.x  = vx;
+    vel_msg.linear.y  = 0.0;
+    vel_msg.linear.z  = 0.0;
+    vel_msg.angular.x = 0.0;
+    vel_msg.angular.y = 0.0;
+    vel_msg.angular.z = vth;
+    moveBase(vel_msg);
+    
+    if(fabs(d) >= angular_tolerance_) return false;
+    if(fabs(diff) >= linear_tolerance_) return false;
+    stopBase();
+    return true;
+  }
+
+  void resetState(){
+    laser_received_ = false;
+    time_start_ = ros::Time::now();
+    unsubscribe();
+    stopBase(); 
+  }
+  
+  int isGoalValid( youbot_base_alignment::BaseGoal goal){
+    ROS_INFO("%s: accept goal", action_name_.c_str());
+    ROS_INFO("Goal: %u ",goal.timeout);
+    if( isnan(goal.timeout) ){
+      ROS_WARN("Goal has NAN item");
+      return 0;
+    }
+    return 1;
+  }
+
+  void setAborted(youbot_base_alignment::BaseResult result, 
+    std::string str = ""){
+    ROS_ERROR("%s: Aborted, %s", action_name_.c_str(), str.c_str());
+    action_.setAborted(result);
+    resetState();
+  }
+
+  void setSucceeded(youbot_base_alignment::BaseResult result){
+    ROS_INFO("%s: Succeeded, take %lf s", action_name_.c_str(),
+      (time_now_ - time_start_).toSec());
+    action_.setSucceeded(result);
+    resetState();
+  }
+
+  void setPreempted(){
+    ROS_WARN("%s: Preempted", action_name_.c_str());
+    action_.setPreempted();
+    resetState();
+  }
+
+  void executeCB(const youbot_base_alignment::BaseGoalConstPtr &goal_msg){
+    youbot_base_alignment::BaseGoal goal = *goal_msg;
+    resetState();
+
+    if( isGoalValid(goal) == 0 ){
+      setAborted(result_,"Goal is invalid");
+      return;
+    }
+    double timeout = static_cast<double>(goal.timeout);
+    ros::Rate r(rate_);
+    
+    while(action_.isActive() || ros::ok()){
+      subscribe();
+      time_now_ = ros::Time::now(); 
+      if( (time_now_ - time_start_).toSec() >= timeout && timeout != 0.0 ){
+        setAborted(result_, "Timeout");
+        return;
+      }
+
+      if( action_.isPreemptRequested() ){
+        if( action_.isNewGoalAvailable() ){
+          goal = *(action_.acceptNewGoal());
+          if( isGoalValid(goal) == 0 ){
+            action_.setAborted(result_, "Goal is invalid");
+            return;
+          }
+          else {
+            ROS_INFO("%s: accept new goal", action_name_.c_str());
+            resetState();
+          }
+        }
+        else{ setPreempted(); return; }
+      }
+      //control loop
+      if( isDone(align_goal_) ) {setSucceeded(result_); return;}
+      r.sleep();
+    }
+  }
+};
+
+int main(int argc, char **argv) {
+  ros::init(argc, argv, "youbot_base_alignment_server");
+  BaseAction action(ros::this_node::getName());
+  ros::spin();
+  return 0;
+}

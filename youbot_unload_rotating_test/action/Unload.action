@@ -1,0 +1,11 @@
+#goal
+float64 timeout     #in second
+string[] items      #item list need to detect
+string[] tray_state #tray state
+string[] containers  #container list
+float64 table_height
+---
+#result
+string[] tray_state #tray state
+---
+#feedback

@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<launch>
+  <node pkg="youbot_unload_object_table" type="youbot_unload_object_table_server" name="youbot_unload_object_table_server" output="screen">
+    <rosparam command="load" file="$(find aricc_rcwork_task)/config/arm_joints.yaml" />
+    <rosparam command="load" file="$(find aricc_rcwork_task)/config/arm_trajectory.yaml" />
+    <rosparam command="load" file="$(find aricc_rcwork_task)/config/stations.yaml" />
+    <param name="rate" type="int" value="20"/>
+    <param name="scan_dist"    type="double" value="0.55"/>
+    <param name="robot_width"  type="double" value="0.46"/>
+    <param name="odom_topic"   type="string" value="odom"/>
+    <param name="object_topic" type="string" value="/youbot_2d_vision/table/output"/>
+    <param name="beam_topic" type="string" value="/youbot_laser_pipeline/GetBeamDist/output"/>
+
+    <param name="table_param_namespace_1" type="string" value="/youbot_2d_vision/table_detect_RotatedRectFinder/"/>
+    <param name="table_param_namespace_2" type="string" value="/youbot_2d_vision/table_detect_RectToMaskImage/"/>
+    <param name="container_1_param_namespace" type="string" value="/youbot_2d_vision/container_1_detect_RotatedRectFinder/"/>
+    <param name="container_2_param_namespace" type="string" value="/youbot_2d_vision/container_2_detect_RotatedRectFinder/"/>
+    <param name="param_name" type="string" value="z"/>
+    <param name="unloadTable_enable" type="bool" value="true"/>
+   </node>
+</launch>

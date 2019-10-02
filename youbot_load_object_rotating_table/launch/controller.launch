@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<launch>
+  <node pkg="youbot_load_object_rotating_table" type="youbot_load_object_rotating_table_controller" name="youbot_load_object_rotating_table_controller" output="screen">
+    <param name="tray_1" type="string" value="empty"/>
+    <param name="tray_2" type="string" value="empty"/>
+    <param name="tray_3" type="string" value="empty"/>
+    <param name="item_1" type="string" value="Bear1ng_Box"/>
+    <param name="item_2" type="string" value="M2O"/>
+    <param name="item_3" type="string" value="F20_20_G"/>
+    <param name="table_height" type="double" value="0.10"/>
+  </node>
+
+  <node pkg="rqt_gui" type="rqt_gui" name="rqt_gui" />
+
+</launch>

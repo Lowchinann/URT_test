@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<launch>
+  <node pkg="youbot_unload_object_table" type="youbot_unload_object_table_controller" name="youbot_unload_object_table_controller" output="screen">
+    <param name="tray_1" type="string" value="R20"/>
+    <param name="tray_2" type="string" value="R30"/>
+    <param name="tray_3" type="string" value="R40"/>
+    <!--param name="tray_3" type="string" value="M20"/-->
+    <!--param name="tray_1" type="string" value="empty"/-->
+    <!--param name="tray_2" type="string" value="empty"/-->
+    <!--param name="tray_3" type="string" value="empty"/-->
+
+    <param name="item_1" type="string" value="R30"/>
+    <param name="item_2" type="string" value="R40"/>
+    <param name="item_3" type="string" value="R20"/>s
+
+    <param name="container_1" type="string" value="Red Container"/>
+    <param name="container_2" type="string" value="Table"/>
+    <param name="container_3" type="string" value="Blue Container"/>
+
+    <param name="table_height" type="double" value="0.10"/>
+  </node>
+
+  <node pkg="youbot_unload_object_table" type="youbot_unload_object_table_server" name="youbot_unload_object_table_server" output="screen">
+    <param name="unloadTable_enable" type="bool" value="true"/>
+  </node>
+
+  <node pkg="rqt_gui" type="rqt_gui" name="rqt_gui" />
+
+</launch>
